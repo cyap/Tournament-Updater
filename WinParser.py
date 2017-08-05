@@ -1,6 +1,7 @@
+import traceback
+
 from urllib.request import urlopen, Request
 from bs4 import BeautifulSoup
-
 import json
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
@@ -16,56 +17,56 @@ urls = {
 
 ####
 
-def posts_from_thread(url):
+def posts_from_thread(url, start=1):
 	posts = []
+	
 	# Calculate page of last post
-	first_page = BeautifulSoup(urlopen(url).read().decode()
-				, "html.parser")
+	first_page = BeautifulSoup(urlopen(url).read().decode(), 'html.parser')
 	try:
-		end = int(str(first_page.find(class_="pageNavHeader"))
-			.split("of ")[1].split("<")[0]) * 25
+		end = int(str(first_page.find(class_='pageNavHeader'))
+			.split('of ')[1].split('<')[0]) * 25
 	except:
 	# only one page
 		end = 25
 
 	# Iterate through all pages
-	for i in range(1, int((end-1) / 25) + 2):
-		page_num = "page-" + str(i)
+	for i in range(start, int((end-1) / 25) + 2):
+		page_num = 'page-' + str(i)
 		try:
-			#page = (urlopen(url.strip() + page_num)
-			#		.read().decode().split("</article>")[:-1])
-			#posts += page
 			page = urlopen(url.strip() + page_num).read().decode()
 			posts += BeautifulSoup(page, 'html.parser').find_all(
 				lambda x: x.name == 'li' and x.has_attr('data-author'))
-			
 		except:
-			pass
-			#traceback.print_exc()
+			traceback.print_exc()
 	return posts
 	
 def parse_post(post):
+	
+	# Post number
+	number_tag = post.find('a', {'class':'postNumber'})
+	post_number = number_tag.decode_contents(formatter='html')
+
+	
 	# Author
 	author = post['data-author']
-	#author = HTML.find(lambda x: x.has_attr('data-author'))['data-author']
-	#author = post.find('li')['data-author']
 	
 	# Body
 	HTMLcontent = post.find('blockquote', 
 		{'class':'messageText ugc baseHtml'}).decode_contents(formatter='html')
-	raw_content = BeautifulSoup(HTMLcontent).get_text()
+	raw_content = BeautifulSoup(HTMLcontent, 'html.parser').get_text().strip()
 	
 	# Timestamp
-	try:
-		timestamp = (post.find('abbr', {'class':'DateTime'})
-			.decode_contents(formatter='html'))
-	except:
-		timestamp = None
-	return {'author':author, 'content':raw_content, 'timestamp':timestamp}
+	timestampHTML = post.find('a', {'class':'datePermalink'}).findChildren()[0]
+	timestamp = ['data-datestring']
+		
+	return {'post_number':post_number,
+			'author':author, 
+			'content':raw_content, 
+			'timestamp':timestamp}
 	
 def upload_to_sheet(parsed_posts):
 	scope = ['https://spreadsheets.google.com/feeds']
-	credentials =ServiceAccountCredentials.from_json_keyfile_name(
+	credentials = ServiceAccountCredentials.from_json_keyfile_name(
 		'./creds.json', scopes=scope)
 
 	file = gspread.authorize(credentials) # authenticate with Google
@@ -86,11 +87,13 @@ def main():
 
 	# Post author, post body, other
 	parsed_posts = map(parse_post, posts)
+	a = (list(parsed_posts))
+	print(a)
 
 	# Upload
 	
 	# Google sheets
-	upload_to_sheet(parsed_posts)
+	#upload_to_sheet(parsed_posts)
 
 
 
