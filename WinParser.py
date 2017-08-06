@@ -1,4 +1,5 @@
 import traceback
+import re
 
 from urllib.request import urlopen, Request
 from bs4 import BeautifulSoup
@@ -10,10 +11,11 @@ from oauth2client.service_account import ServiceAccountCredentials
 urls = {
 	'lc':[
 		'http://www.smogon.com/forums/threads/the-lc-open-vi-round-1.3610246/'
+	],
+	'ubers':[
+	'http://www.smogon.com/forums/threads/the-ubers-open-vi-round-1.3610289/'
 	]
 }
-
-
 
 ####
 
@@ -46,14 +48,12 @@ def parse_post(post):
 	number_tag = post.find('a', {'class':'postNumber'})
 	post_number = number_tag.decode_contents(formatter='html')
 
-	
 	# Author
 	author = post['data-author']
 	
 	# Body
-	HTMLcontent = post.find('blockquote', 
+	content = post.find('blockquote', 
 		{'class':'messageText ugc baseHtml'}).decode_contents(formatter='html')
-	raw_content = BeautifulSoup(HTMLcontent, 'html.parser').get_text().strip()
 	
 	# Timestamp
 	timestampHTML = post.find('a', {'class':'datePermalink'}).findChildren()[0]
@@ -61,9 +61,52 @@ def parse_post(post):
 		
 	return {'post_number':post_number,
 			'author':author, 
-			'content':raw_content, 
+			'content':content, 
 			'timestamp':timestamp}
 	
+def parse_pairings(raw_post):
+
+	pairings = {}
+	winners = []
+	losers = []
+	
+	# Scrub post
+	post = BeautifulSoup(raw_post, 'html.parser')
+	post.a.unwrap()
+	post.span.unwrap()
+
+	for pairing in str(post).splitlines():
+		if re.compile(r'.*\Wvs\W.*').match(pairing):
+			players = list(map(str.strip, re.compile(r'vs\W').split(pairing)))
+		
+			# Format players
+			player1 = BeautifulSoup(
+				players[0], 'html.parser').get_text().strip() 
+			player2 = BeautifulSoup(
+				players[1], 'html.parser').get_text().strip()
+
+			pairings[player1] = player2
+			pairings[player2] = player1
+
+			if players[0].startswith('<b>') or players[0].endswith('</b>'): 
+				winners.append(player1)
+				losers.append(player2)
+			elif players[1].startswith('<b>') or players[1].endswith('</b>'):
+				winners.append(player2)
+				losers.append(player1)
+		
+	return {'pairings':pairings,
+			'winners':winners,
+			'losers':losers}
+
+		# Extended matches
+		
+		# player -> tier -> round 1 -> win / loss / incomplete
+		# round / wins
+		# check which round
+		# round 1
+
+
 def upload_to_sheet(parsed_posts):
 	scope = ['https://spreadsheets.google.com/feeds']
 	credentials = ServiceAccountCredentials.from_json_keyfile_name(
@@ -81,14 +124,17 @@ def upload_to_sheet(parsed_posts):
 	
 def main():	
 	# Main
-	
-	# Scrape open text
-	posts = posts_from_thread(urls['lc'][0])
+	for tier in ('lc', 'ubers'):
+		# Scrape open text
+		posts = posts_from_thread(urls[tier][0])
 
-	# Post author, post body, other
-	parsed_posts = map(parse_post, posts)
-	a = (list(parsed_posts))
-	print(a)
+		# Post author, post body, other
+		parsed_posts = map(parse_post, posts)
+		a = (list(parsed_posts))
+	
+		for winner in parse_pairings(a[0]['content'])['winners']:
+			print(winner)
+	#print(a)
 
 	# Upload
 	
